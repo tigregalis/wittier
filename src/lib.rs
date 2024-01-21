@@ -286,7 +286,8 @@ fn print_type_wit(krate: &Crate, typ: &Type) -> ColoredString {
                         ["core", "result", "Result"] => "result".on_yellow(),
                         ["core", "option", "Option"] => "option".on_yellow(),
                         ["alloc", "vec", "Vec"] => "list".on_yellow(),
-                        _ => item_summary.path.join(":").on_green(),
+                        ["alloc", "string", "String"] => "string".on_yellow(),
+                        _ => path_join_wit(&item_summary.path).on_green(),
                     }
                     // if item_summary.path == ["alloc", "vec", "Vec"] {
                     //     "list".on_yellow()
