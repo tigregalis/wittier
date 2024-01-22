@@ -10,7 +10,8 @@ use colored::{ColoredString, Colorize};
 use convert_case::{Case, Casing};
 use io_adapters::WriteExtension;
 use rustdoc_types::{
-    Crate, Function, GenericArg, GenericArgs, Id, Item, ItemEnum, ItemKind, ItemSummary, Type,
+    Crate, Function, GenericArg, GenericArgs, Id, Item, ItemEnum, ItemKind, ItemSummary, Struct,
+    StructKind, Type, Visibility,
 };
 
 #[derive(Parser, Debug)]
@@ -31,8 +32,8 @@ pub fn main(_args: Args) {
     //     })
     //     .collect::<Vec<_>>();
 
-    // let mut wit_buffer = String::new();
-    // let mut rust_buffer = String::new();
+    let mut wit_buffer = String::new();
+    let mut rust_buffer = String::new();
     let mut stdout = std::io::stdout();
     let mut stdout = stdout.write_adapter();
 
@@ -70,10 +71,10 @@ pub fn main(_args: Args) {
     for (_id, item_summary, item) in items {
         match &item.inner {
             ItemEnum::Function(func) => {
-                println!();
+                // println!();
                 handle_func_print(
-                    // &mut rust_buffer,
-                    &mut stdout,
+                    &mut rust_buffer,
+                    // &mut stdout,
                     "rust",
                     path_join_rust,
                     print_type_rust,
@@ -83,8 +84,8 @@ pub fn main(_args: Args) {
                     func,
                 );
                 handle_func_print(
-                    // &mut wit_buffer,
-                    &mut stdout,
+                    &mut wit_buffer,
+                    // &mut stdout,
                     "wit",
                     path_join_wit,
                     print_type_wit,
@@ -121,8 +122,81 @@ pub fn main(_args: Args) {
                 continue;
             }
             ItemEnum::Struct(struct_) => {
-                dbg!(struct_, item_summary);
-                todo!("ItemEnum::Struct")
+                // println!();
+                // dbg!(item_summary, struct_);
+                // let path = path_join_rust(&item_summary.path);
+                // if !struct_.generics.params.is_empty() {
+                //     println!("{path}</* GENERICS */>");
+                //     continue;
+                // }
+                // match &struct_.kind {
+                //     StructKind::Unit => todo!("StructKind::Unit"),
+                //     StructKind::Tuple(fields) => {
+                //         if fields.contains(&None) {
+                //             println!("{path}(/* private fields */)",);
+                //         } else {
+                //             let field_names = fields
+                //                 .iter()
+                //                 .map(|f| {
+                //                     f.as_ref()
+                //                         .map(|f| krate.index.get(f).and_then(|f| f.name.as_deref()))
+                //                 })
+                //                 .collect::<Vec<_>>();
+                //             println!("{path}({field_names:?})",);
+                //         }
+                //     }
+                //     StructKind::Plain {
+                //         fields,
+                //         fields_stripped,
+                //     } => {
+                //         if *fields_stripped {
+                //             println!("{path}(/* private fields */)",);
+                //         } else {
+                //             let field_names = fields
+                //                 .iter()
+                //                 .map(|f| krate.index.get(f).and_then(|f| f.name.as_deref()))
+                //                 .collect::<Vec<_>>();
+                //             println!("struct {path} {{");
+                //             for field in fields.iter().map(|f| krate.index.get(f)) {
+                //                 if let Some(Item {
+                //                     name: Some(name),
+                //                     visibility: Visibility::Public,
+                //                     inner: ItemEnum::StructField(ty),
+                //                     ..
+                //                 }) = field
+                //                 {
+                //                     println!("    {name}: {ty},", ty = print_type_rust(&krate, ty));
+                //                 } else {
+                //                     todo!();
+                //                 }
+                //             }
+                //             println!("}}");
+                //         }
+                //     }
+                // }
+                // todo!("ItemEnum::Struct")
+                handle_struct_print(
+                    // &mut rust_buffer,
+                    &mut stdout,
+                    path_join_rust,
+                    &print_type_rust,
+                    &print_struct_field_rust,
+                    print_struct_rust,
+                    &krate,
+                    item_summary,
+                    struct_,
+                );
+                handle_struct_print(
+                    // &mut rust_buffer,
+                    &mut stdout,
+                    path_join_wit,
+                    &print_type_wit,
+                    &print_struct_field_wit,
+                    print_struct_wit,
+                    &krate,
+                    item_summary,
+                    struct_,
+                );
             }
             // ItemEnum::ExternCrate { name, rename } => todo!("ItemEnum::ExternCrate"),
             // ItemEnum::Import(_) => todo!("ItemEnum::Import"),
@@ -181,6 +255,136 @@ fn handle_func_print<W: Write>(
         .join(", ");
 
     print_func(buffer, key, &path, &inputs, &output);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_struct_print<
+    'main,
+    W: Write,
+    Pt: Fn(&Crate, &Type) -> ColoredString,
+    Psf: Fn(&mut W, &'main Pt, &Crate, &str, &Type),
+>(
+    buffer: &mut W,
+    path_join: impl Fn(&[String]) -> String,
+    print_type: &'main Pt,
+    print_struct_field: &'main Psf,
+    print_struct: impl Fn(&mut W, &'main Psf, &'main Pt, &Crate, &str, &[Id]),
+    krate: &Crate,
+    item_summary: &ItemSummary,
+    struct_: &Struct,
+) {
+    let path = path_join(&item_summary.path);
+    if !struct_.generics.params.is_empty() {
+        println!("{path}</* GENERICS */>");
+        return;
+    }
+    match &struct_.kind {
+        StructKind::Unit => todo!("StructKind::Unit"),
+        StructKind::Tuple(fields) => {
+            if fields.contains(&None) {
+                println!("{path}(/* private fields */)",);
+            } else {
+                let field_names = fields
+                    .iter()
+                    .map(|f| {
+                        f.as_ref()
+                            .map(|f| krate.index.get(f).and_then(|f| f.name.as_deref()))
+                    })
+                    .collect::<Vec<_>>();
+                println!("{path}({field_names:?})",);
+            }
+        }
+        StructKind::Plain {
+            fields,
+            fields_stripped,
+        } => {
+            if *fields_stripped {
+                println!("{path} {{/* private fields */}}",);
+            } else {
+                print_struct(buffer, print_struct_field, print_type, krate, &path, fields);
+            }
+        }
+    }
+}
+
+fn print_struct_rust<
+    'main,
+    W: Write,
+    Pt: Fn(&Crate, &Type) -> ColoredString,
+    Psf: Fn(&mut W, &'main Pt, &Crate, &str, &Type),
+>(
+    buffer: &mut W,
+    print_struct_field: &'main Psf,
+    print_type: &'main Pt,
+    krate: &Crate,
+    path: &str,
+    fields: &[Id],
+) {
+    writeln!(buffer, "struct {path} {{").unwrap();
+    for field in fields.iter().map(|f| krate.index.get(f)) {
+        if let Some(Item {
+            name: Some(name),
+            visibility: Visibility::Public,
+            inner: ItemEnum::StructField(ty),
+            ..
+        }) = field
+        {
+            print_struct_field(buffer, print_type, krate, name, ty);
+        } else {
+            todo!();
+        }
+    }
+    writeln!(buffer, "}}").unwrap();
+}
+
+fn print_struct_wit<
+    'main,
+    W: Write,
+    Pt: Fn(&Crate, &Type) -> ColoredString,
+    Psf: Fn(&mut W, &'main Pt, &Crate, &str, &Type),
+>(
+    buffer: &mut W,
+    print_struct_field: &'main Psf,
+    print_type: &'main Pt,
+    krate: &Crate,
+    path: &str,
+    fields: &[Id],
+) {
+    writeln!(buffer, "record {path} {{").unwrap();
+    for field in fields.iter().map(|f| krate.index.get(f)) {
+        if let Some(Item {
+            name: Some(name),
+            visibility: Visibility::Public,
+            inner: ItemEnum::StructField(ty),
+            ..
+        }) = field
+        {
+            print_struct_field(buffer, print_type, krate, name, ty);
+        } else {
+            todo!();
+        }
+    }
+    writeln!(buffer, "}}").unwrap();
+}
+
+fn print_struct_field_rust<W: Write>(
+    buffer: &mut W,
+    print_type: impl Fn(&Crate, &Type) -> ColoredString,
+    krate: &Crate,
+    name: &str,
+    ty: &Type,
+) {
+    writeln!(buffer, "    {name}: {ty},", ty = print_type(krate, ty)).unwrap();
+}
+
+fn print_struct_field_wit<W: Write>(
+    buffer: &mut W,
+    print_type: impl Fn(&Crate, &Type) -> ColoredString,
+    krate: &Crate,
+    name: &str,
+    ty: &Type,
+) {
+    writeln!(buffer, "  {name}: {ty},", ty = print_type(krate, ty)).unwrap();
 }
 
 fn print_func_rust<W: Write>(buffer: &mut W, key: &str, path: &str, inputs: &str, outputs: &str) {
