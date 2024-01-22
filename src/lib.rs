@@ -3,12 +3,15 @@ use std::{
     fs,
 };
 
+use clap::Parser;
 use colored::{ColoredString, Colorize};
 use convert_case::{Case, Casing};
 use rustdoc_types::{
     Crate, Function, GenericArg, GenericArgs, Id, Item, ItemEnum, ItemKind, ItemSummary, Type,
 };
 
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
 pub struct Args;
 
 pub fn main(_args: Args) {

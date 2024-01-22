@@ -1,3 +1,6 @@
+use clap::Parser;
+
 fn main() {
-    wittier::main(wittier::Args);
+    let args = wittier::Args::parse();
+    wittier::main(args);
 }
