@@ -1,11 +1,14 @@
 use std::{
     collections::{HashMap, HashSet},
+    fmt::Write,
+    // io::Write,
     fs,
 };
 
 use clap::Parser;
 use colored::{ColoredString, Colorize};
 use convert_case::{Case, Casing};
+use io_adapters::WriteExtension;
 use rustdoc_types::{
     Crate, Function, GenericArg, GenericArgs, Id, Item, ItemEnum, ItemKind, ItemSummary, Type,
 };
@@ -27,6 +30,11 @@ pub fn main(_args: Args) {
     //         _ => None,
     //     })
     //     .collect::<Vec<_>>();
+
+    // let mut wit_buffer = String::new();
+    // let mut rust_buffer = String::new();
+    let mut stdout = std::io::stdout();
+    let mut stdout = stdout.write_adapter();
 
     let ids_from_paths = krate.paths.keys().collect::<HashSet<_>>();
     let ids_from_index = krate.index.keys().collect::<HashSet<_>>();
@@ -60,57 +68,99 @@ pub fn main(_args: Args) {
         .collect::<Vec<_>>();
     items.sort_by_key(|item| item.1.path.join("::"));
     for (_id, item_summary, item) in items {
-        let ItemEnum::Function(func) = &item.inner else {
-            continue;
+        match &item.inner {
+            ItemEnum::Function(func) => {
+                println!();
+                handle_func_print(
+                    // &mut rust_buffer,
+                    &mut stdout,
+                    "rust",
+                    path_join_rust,
+                    print_type_rust,
+                    print_func_rust,
+                    &krate,
+                    item_summary,
+                    func,
+                );
+                handle_func_print(
+                    // &mut wit_buffer,
+                    &mut stdout,
+                    "wit",
+                    path_join_wit,
+                    print_type_wit,
+                    print_func_wit,
+                    &krate,
+                    item_summary,
+                    func,
+                );
+
+                // let (key, pj, pt, print) = ("rust", path_join_rust, print_type_rust, print_rust);
+                // let (key, pj, pt, print) = ("wit", path_join_wit, print_type_wit, print_wit);
+
+                // let path = pj(&item_summary.path);
+
+                // let output = match func.decl.output {
+                //     Some(ref typ) => format!(" -> {}", pt(&krate, typ)),
+                //     None => "".to_string(),
+                // };
+
+                // let inputs = func
+                //     .decl
+                //     .inputs
+                //     .iter()
+                //     .map(|(name, typ)| format!("{name}: {typ}", typ = pt(&krate, typ)))
+                //     .collect::<Vec<_>>()
+                //     .join(", ");
+
+                // print(key, &path, &inputs, &output);
+            }
+            ItemEnum::Primitive(_prim) => {
+                continue;
+            }
+            ItemEnum::Module(_modl) => {
+                continue;
+            }
+            ItemEnum::Struct(struct_) => {
+                dbg!(struct_, item_summary);
+                todo!("ItemEnum::Struct")
+            }
+            // ItemEnum::ExternCrate { name, rename } => todo!("ItemEnum::ExternCrate"),
+            // ItemEnum::Import(_) => todo!("ItemEnum::Import"),
+            // ItemEnum::Union(_) => todo!("ItemEnum::Union"),
+            // ItemEnum::StructField(_) => todo!("ItemEnum::StructField"),
+            // ItemEnum::Enum(_) => todo!("ItemEnum::Enum"),
+            // ItemEnum::Variant(_) => todo!("ItemEnum::Variant"),
+            // ItemEnum::Trait(_) => todo!("ItemEnum::Trait"),
+            // ItemEnum::TraitAlias(_) => todo!("ItemEnum::TraitAlias"),
+            // ItemEnum::Impl(_) => todo!("ItemEnum::Impl"),
+            // ItemEnum::TypeAlias(_) => todo!("ItemEnum::TypeAlias"),
+            // ItemEnum::OpaqueTy(_) => todo!("ItemEnum::OpaqueTy"),
+            // ItemEnum::Constant(_) => todo!("ItemEnum::Constant"),
+            // ItemEnum::Static(_) => todo!("ItemEnum::Static"),
+            // ItemEnum::ForeignType => todo!("ItemEnum::ForeignType"),
+            // ItemEnum::Macro(_) => todo!("ItemEnum::Macro"),
+            // ItemEnum::ProcMacro(_) => todo!("ItemEnum::ProcMacro"),
+            // ItemEnum::AssocConst { type_, default } => todo!("ItemEnum::AssocConst"),
+            // ItemEnum::AssocType {
+            //     generics,
+            //     bounds,
+            //     default,
+            // } => todo!("ItemEnum::AssocType"),
+            _ => {}
         };
-
-        // let (key, pj, pt, print) = ("rust", path_join_rust, print_type_rust, print_rust);
-        // let (key, pj, pt, print) = ("wit", path_join_wit, print_type_wit, print_wit);
-
-        // let path = pj(&item_summary.path);
-
-        // let output = match func.decl.output {
-        //     Some(ref typ) => format!(" -> {}", pt(&krate, typ)),
-        //     None => "".to_string(),
-        // };
-
-        // let inputs = func
-        //     .decl
-        //     .inputs
-        //     .iter()
-        //     .map(|(name, typ)| format!("{name}: {typ}", typ = pt(&krate, typ)))
-        //     .collect::<Vec<_>>()
-        //     .join(", ");
-
-        // print(key, &path, &inputs, &output);
-
-        println!();
-        handle_print(
-            "rust",
-            path_join_rust,
-            print_type_rust,
-            print_rust,
-            &krate,
-            item_summary,
-            func,
-        );
-        handle_print(
-            "wit",
-            path_join_wit,
-            print_type_wit,
-            print_wit,
-            &krate,
-            item_summary,
-            func,
-        );
     }
+
+    // print!("{}", wit_buffer);
+    // print!("{}", rust_buffer);
 }
 
-fn handle_print(
+#[allow(clippy::too_many_arguments)]
+fn handle_func_print<W: Write>(
+    buffer: &mut W,
     key: &str,
     path_join: impl Fn(&[String]) -> String,
     print_type: impl Fn(&Crate, &Type) -> ColoredString,
-    print: impl Fn(&str, &str, &str, &str),
+    print_func: impl Fn(&mut W, &str, &str, &str, &str),
     krate: &Crate,
     item_summary: &ItemSummary,
     func: &Function,
@@ -130,15 +180,15 @@ fn handle_print(
         .collect::<Vec<_>>()
         .join(", ");
 
-    print(key, &path, &inputs, &output);
+    print_func(buffer, key, &path, &inputs, &output);
 }
 
-fn print_rust(key: &str, path: &str, inputs: &str, outputs: &str) {
-    println!("{key}: fn {path}({inputs}){outputs}");
+fn print_func_rust<W: Write>(buffer: &mut W, key: &str, path: &str, inputs: &str, outputs: &str) {
+    writeln!(buffer, "{key}: fn {path}({inputs}){outputs}").unwrap();
 }
 
-fn print_wit(key: &str, path: &str, inputs: &str, outputs: &str) {
-    println!("{key}: {path}: func({inputs}){outputs}");
+fn print_func_wit<W: Write>(buffer: &mut W, key: &str, path: &str, inputs: &str, outputs: &str) {
+    writeln!(buffer, "{key}: {path}: func({inputs}){outputs}").unwrap();
 }
 
 fn path_join_rust(path: &[String]) -> String {

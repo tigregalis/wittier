@@ -122,6 +122,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "95505c38b4572b2d910cecb0281560f54b440a19336cbbcb27bf6ce6adc6f5a8"
 
 [[package]]
+name = "io-adapters"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0fa801fc0447544dc703e039e880b50296901e20c235337d08bb5e55eec6e500"
+
+[[package]]
 name = "itoa"
 version = "1.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -371,6 +377,7 @@ dependencies = [
  "clap",
  "colored",
  "convert_case",
+ "io-adapters",
  "rustdoc-types",
  "serde_json",
 ]
