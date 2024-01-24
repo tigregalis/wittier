@@ -438,13 +438,26 @@ fn print_type_rust(krate: &Crate, typ: &Type) -> ColoredString {
                 .unwrap_or("".to_string().into());
             let name = match krate.paths.get(&path.id) {
                 Some(item_summary) => item_summary.path.join("::").on_green(),
-                None => {
-                    println!(
-                        "{}",
-                        format!("--- not in crate.paths: {} ---", path.name).on_red()
-                    );
-                    path.name.on_red()
-                }
+                None => match krate.index.get(&path.id) {
+                    Some(Item {
+                        name: Some(name),
+                        visibility: Visibility::Public,
+                        ..
+                    }) => {
+                        let mut parts = path.name.split("::").collect::<Vec<_>>();
+                        assert_eq!(parts.last().unwrap(), name);
+                        if parts[0] == "crate" {
+                            parts[0] = krate.index[&krate.root].name.as_ref().unwrap().as_str();
+                        }
+                        let parts = parts.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+                        // path_join_wit(&[name.clone()]).on_black()
+                        path_join_rust(&parts).on_black()
+                    }
+                    _ => {
+                        println!("{}", format!("--- unhandled: {} ---", path.name).on_red());
+                        path.name.on_red()
+                    }
+                },
             };
             format!("{name}{args}").into()
         }
@@ -554,13 +567,26 @@ fn print_type_wit(krate: &Crate, typ: &Type) -> ColoredString {
                     //     item_summary.path.join(":").on_green()
                     // }
                 }
-                None => {
-                    println!(
-                        "{}",
-                        format!("--- not in crate.paths: {} ---", path.name).on_red()
-                    );
-                    path.name.on_red()
-                }
+                None => match krate.index.get(&path.id) {
+                    Some(Item {
+                        name: Some(name),
+                        visibility: Visibility::Public,
+                        ..
+                    }) => {
+                        let mut parts = path.name.split("::").collect::<Vec<_>>();
+                        assert_eq!(parts.last().unwrap(), name);
+                        if parts[0] == "crate" {
+                            parts[0] = krate.index[&krate.root].name.as_ref().unwrap().as_str();
+                        }
+                        let parts = parts.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+                        // path_join_wit(&[name.clone()]).on_black()
+                        path_join_wit(&parts).on_black()
+                    }
+                    _ => {
+                        println!("{}", format!("--- unhandled: {} ---", path.name).on_red());
+                        path.name.on_red()
+                    }
+                },
             };
             format!("{name}{args}").into()
         }
@@ -621,22 +647,22 @@ fn print_type_wit(krate: &Crate, typ: &Type) -> ColoredString {
 // handle
 // id
 
-fn map_rust_primitive_to_wit(ty: &str) -> &str {
+fn map_rust_primitive_to_wit(ty: &str) -> String {
     match ty {
-        "u8" => "u8",
-        "u16" => "u16",
-        "u32" => "u32",
-        "u64" => "u64",
-        "i8" => "s8",
-        "i16" => "s16",
-        "i32" => "s32",
-        "i64" => "s64",
-        "f32" => "float32",
-        "f64" => "float64",
-        "char" => "char",
-        "bool" => "bool",
-        "String" => "string",
-        "str" => "string",
-        _ => ty,
+        "u8" => "u8".to_string(),
+        "u16" => "u16".to_string(),
+        "u32" => "u32".to_string(),
+        "u64" => "u64".to_string(),
+        "i8" => "s8".to_string(),
+        "i16" => "s16".to_string(),
+        "i32" => "s32".to_string(),
+        "i64" => "s64".to_string(),
+        "f32" => "float32".to_string(),
+        "f64" => "float64".to_string(),
+        "char" => "char".to_string(),
+        "bool" => "bool".to_string(),
+        "String" => "string".to_string(),
+        "str" => "string".to_string(),
+        _ => format!("todo<{ty}>", ty = ty.to_case(Case::Kebab)),
     }
 }
