@@ -82,6 +82,7 @@ pub fn main(_args: Args) {
                     &krate,
                     item_summary,
                     func,
+                    None,
                 );
                 handle_func_print(
                     &mut wit_buffer,
@@ -93,6 +94,7 @@ pub fn main(_args: Args) {
                     &krate,
                     item_summary,
                     func,
+                    None,
                 );
 
                 // let (key, pj, pt, print) = ("rust", path_join_rust, print_type_rust, print_rust);
@@ -121,8 +123,8 @@ pub fn main(_args: Args) {
             }
             ItemEnum::Struct(struct_) => {
                 handle_struct_print(
-                    // &mut rust_buffer,
-                    &mut stdout,
+                    &mut rust_buffer,
+                    // &mut stdout,
                     path_join_rust,
                     &print_type_rust,
                     &print_struct_field_rust,
@@ -160,14 +162,14 @@ pub fn main(_args: Args) {
                         let items = items.iter().map(|id| krate.index.get(id));
                         for item in items {
                             if let Some(Item {
-                                name: Some(name),
+                                name,
                                 inner: ItemEnum::Function(func),
                                 ..
                             }) = item
                             {
                                 handle_func_print(
-                                    // &mut rust_buffer,
-                                    &mut stdout,
+                                    &mut rust_buffer,
+                                    // &mut stdout,
                                     "rust",
                                     path_join_rust,
                                     print_type_rust,
@@ -175,6 +177,7 @@ pub fn main(_args: Args) {
                                     &krate,
                                     item_summary,
                                     func,
+                                    name.as_deref(),
                                 );
                                 handle_func_print(
                                     // &mut wit_buffer,
@@ -186,6 +189,7 @@ pub fn main(_args: Args) {
                                     &krate,
                                     item_summary,
                                     func,
+                                    name.as_deref(),
                                 );
                             }
                         }
@@ -239,8 +243,11 @@ fn handle_func_print<W: Write>(
     krate: &Crate,
     item_summary: &ItemSummary,
     func: &Function,
+    name: Option<&str>,
 ) {
-    let path = path_join(&item_summary.path);
+    let mut path = item_summary.path.clone();
+    path.extend(name.map(|s| s.to_string()));
+    let path = path_join(&path);
 
     let output = match func.decl.output {
         Some(ref typ) => format!(" -> {}", print_type(krate, typ)),
@@ -492,6 +499,7 @@ fn print_type_rust(krate: &Crate, typ: &Type) -> ColoredString {
             // format!("({s})").into()
             format!("({})", join_colored_str(&types, ", ")).into()
         }
+        Type::Generic(typ) if typ == "Self" => "Self".on_red(),
         _ => format!("TODO<{typ:?}>").on_black(),
     }
 }
