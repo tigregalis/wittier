@@ -10,8 +10,8 @@ use colored::{ColoredString, Colorize};
 use convert_case::{Case, Casing};
 use io_adapters::WriteExtension;
 use rustdoc_types::{
-    Crate, Function, GenericArg, GenericArgs, Id, Item, ItemEnum, ItemKind, ItemSummary, Struct,
-    StructKind, Type, Visibility,
+    Crate, Function, GenericArg, GenericArgs, Id, Impl, Item, ItemEnum, ItemKind, ItemSummary,
+    Struct, StructKind, Type, Visibility,
 };
 
 #[derive(Parser, Debug)]
@@ -115,66 +115,11 @@ pub fn main(_args: Args) {
 
                 // print(key, &path, &inputs, &output);
             }
-            ItemEnum::Primitive(_prim) => {
-                continue;
-            }
+            ItemEnum::Primitive(_prim) => unimplemented!("ItemEnum::Primitive"),
             ItemEnum::Module(_modl) => {
                 continue;
             }
             ItemEnum::Struct(struct_) => {
-                // println!();
-                // dbg!(item_summary, struct_);
-                // let path = path_join_rust(&item_summary.path);
-                // if !struct_.generics.params.is_empty() {
-                //     println!("{path}</* GENERICS */>");
-                //     continue;
-                // }
-                // match &struct_.kind {
-                //     StructKind::Unit => todo!("StructKind::Unit"),
-                //     StructKind::Tuple(fields) => {
-                //         if fields.contains(&None) {
-                //             println!("{path}(/* private fields */)",);
-                //         } else {
-                //             let field_names = fields
-                //                 .iter()
-                //                 .map(|f| {
-                //                     f.as_ref()
-                //                         .map(|f| krate.index.get(f).and_then(|f| f.name.as_deref()))
-                //                 })
-                //                 .collect::<Vec<_>>();
-                //             println!("{path}({field_names:?})",);
-                //         }
-                //     }
-                //     StructKind::Plain {
-                //         fields,
-                //         fields_stripped,
-                //     } => {
-                //         if *fields_stripped {
-                //             println!("{path}(/* private fields */)",);
-                //         } else {
-                //             let field_names = fields
-                //                 .iter()
-                //                 .map(|f| krate.index.get(f).and_then(|f| f.name.as_deref()))
-                //                 .collect::<Vec<_>>();
-                //             println!("struct {path} {{");
-                //             for field in fields.iter().map(|f| krate.index.get(f)) {
-                //                 if let Some(Item {
-                //                     name: Some(name),
-                //                     visibility: Visibility::Public,
-                //                     inner: ItemEnum::StructField(ty),
-                //                     ..
-                //                 }) = field
-                //                 {
-                //                     println!("    {name}: {ty},", ty = print_type_rust(&krate, ty));
-                //                 } else {
-                //                     todo!();
-                //                 }
-                //             }
-                //             println!("}}");
-                //         }
-                //     }
-                // }
-                // todo!("ItemEnum::Struct")
                 handle_struct_print(
                     // &mut rust_buffer,
                     &mut stdout,
@@ -187,8 +132,8 @@ pub fn main(_args: Args) {
                     struct_,
                 );
                 handle_struct_print(
-                    // &mut rust_buffer,
-                    &mut stdout,
+                    &mut wit_buffer,
+                    // &mut stdout,
                     path_join_wit,
                     &print_type_wit,
                     &print_struct_field_wit,
@@ -197,16 +142,72 @@ pub fn main(_args: Args) {
                     item_summary,
                     struct_,
                 );
+
+                // --- handle function impls ---
+                for impl_id in struct_.impls.iter() {
+                    if let Some(Item {
+                        name: None,
+                        inner:
+                            ItemEnum::Impl(Impl {
+                                trait_: None,
+                                for_: Type::ResolvedPath(_),
+                                items,
+                                ..
+                            }),
+                        ..
+                    }) = &krate.index.get(impl_id)
+                    {
+                        let items = items.iter().map(|id| krate.index.get(id));
+                        for item in items {
+                            if let Some(Item {
+                                name: Some(name),
+                                inner: ItemEnum::Function(func),
+                                ..
+                            }) = item
+                            {
+                                handle_func_print(
+                                    // &mut rust_buffer,
+                                    &mut stdout,
+                                    "rust",
+                                    path_join_rust,
+                                    print_type_rust,
+                                    print_func_rust,
+                                    &krate,
+                                    item_summary,
+                                    func,
+                                );
+                                handle_func_print(
+                                    // &mut wit_buffer,
+                                    &mut stdout,
+                                    "wit",
+                                    path_join_wit,
+                                    print_type_wit,
+                                    print_func_wit,
+                                    &krate,
+                                    item_summary,
+                                    func,
+                                );
+                            }
+                        }
+                    }
+                }
+                // ---/ handle impls ---
             }
             // ItemEnum::ExternCrate { name, rename } => todo!("ItemEnum::ExternCrate"),
             // ItemEnum::Import(_) => todo!("ItemEnum::Import"),
             // ItemEnum::Union(_) => todo!("ItemEnum::Union"),
-            // ItemEnum::StructField(_) => todo!("ItemEnum::StructField"),
-            // ItemEnum::Enum(_) => todo!("ItemEnum::Enum"),
-            // ItemEnum::Variant(_) => todo!("ItemEnum::Variant"),
+            ItemEnum::StructField(_) => unimplemented!("ItemEnum::StructField: part of a struct"),
+            // ItemEnum::Enum(enum_) => {
+            //     println!("{enum_:?}");
+            //     todo!("ItemEnum::Enum")
+            // }
+            ItemEnum::Variant(variant) => {
+                continue;
+                // unimplemented!("ItemEnum::Variant: part of an enum: {variant:?}")
+            }
             // ItemEnum::Trait(_) => todo!("ItemEnum::Trait"),
             // ItemEnum::TraitAlias(_) => todo!("ItemEnum::TraitAlias"),
-            // ItemEnum::Impl(_) => todo!("ItemEnum::Impl"),
+            ItemEnum::Impl(_) => unimplemented!("ItemEnum::Impl: referenced by other types"),
             // ItemEnum::TypeAlias(_) => todo!("ItemEnum::TypeAlias"),
             // ItemEnum::OpaqueTy(_) => todo!("ItemEnum::OpaqueTy"),
             // ItemEnum::Constant(_) => todo!("ItemEnum::Constant"),
