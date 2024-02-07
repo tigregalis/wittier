@@ -14,6 +14,8 @@ use rustdoc_types::{
     Struct, StructKind, Type, Visibility,
 };
 
+pub mod query;
+
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 pub struct Args;
@@ -147,7 +149,7 @@ pub fn main(_args: Args) {
 
                 // --- handle function impls ---
                 for impl_id in struct_.impls.iter() {
-                    if let Some(Item {
+                    let Some(Item {
                         name: None,
                         inner:
                             ItemEnum::Impl(Impl {
@@ -158,41 +160,43 @@ pub fn main(_args: Args) {
                             }),
                         ..
                     }) = &krate.index.get(impl_id)
-                    {
-                        let items = items.iter().map(|id| krate.index.get(id));
-                        for item in items {
-                            if let Some(Item {
-                                name,
-                                inner: ItemEnum::Function(func),
-                                ..
-                            }) = item
-                            {
-                                handle_func_print(
-                                    &mut rust_buffer,
-                                    // &mut stdout,
-                                    "rust",
-                                    path_join_rust,
-                                    print_type_rust,
-                                    print_func_rust,
-                                    &krate,
-                                    item_summary,
-                                    func,
-                                    name.as_deref(),
-                                );
-                                handle_func_print(
-                                    // &mut wit_buffer,
-                                    &mut stdout,
-                                    "wit",
-                                    path_join_wit,
-                                    print_type_wit,
-                                    print_func_wit,
-                                    &krate,
-                                    item_summary,
-                                    func,
-                                    name.as_deref(),
-                                );
-                            }
-                        }
+                    else {
+                        continue;
+                    };
+                    let items = items.iter().map(|id| krate.index.get(id));
+                    for item in items {
+                        let Some(Item {
+                            name,
+                            inner: ItemEnum::Function(func),
+                            ..
+                        }) = item
+                        else {
+                            continue;
+                        };
+                        handle_func_print(
+                            // &mut rust_buffer,
+                            &mut stdout,
+                            "rust",
+                            path_join_rust,
+                            print_type_rust,
+                            print_func_rust,
+                            &krate,
+                            item_summary,
+                            func,
+                            name.as_deref(),
+                        );
+                        handle_func_print(
+                            &mut wit_buffer,
+                            // &mut stdout,
+                            "wit",
+                            path_join_wit,
+                            print_type_wit,
+                            print_func_wit,
+                            &krate,
+                            item_summary,
+                            func,
+                            name.as_deref(),
+                        );
                     }
                 }
                 // ---/ handle impls ---
