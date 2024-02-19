@@ -77,6 +77,8 @@ pub trait ItemEnumExt {
     fn as_macro(&self) -> Option<Macro>;
     fn as_proc_macro(&self) -> Option<&rustdoc_types::ProcMacro>;
     fn as_primitive(&self) -> Option<&rustdoc_types::Primitive>;
+    fn as_assoc_const(&self) -> Option<AssocConst>;
+    fn as_assoc_type(&self) -> Option<AssocType>;
 }
 
 impl ItemEnumExt for rustdoc_types::ItemEnum {
@@ -222,6 +224,34 @@ impl ItemEnumExt for rustdoc_types::ItemEnum {
             None
         }
     }
+
+    fn as_assoc_const(&self) -> Option<AssocConst> {
+        if let rustdoc_types::ItemEnum::AssocConst { type_, default } = self {
+            Some(AssocConst {
+                type_,
+                default: default.as_deref(),
+            })
+        } else {
+            None
+        }
+    }
+
+    fn as_assoc_type(&self) -> Option<AssocType> {
+        if let rustdoc_types::ItemEnum::AssocType {
+            generics,
+            bounds,
+            default,
+        } = self
+        {
+            Some(AssocType {
+                generics,
+                bounds: bounds.as_slice(),
+                default: default.as_ref(),
+            })
+        } else {
+            None
+        }
+    }
 }
 
 // TODO:
@@ -342,7 +372,7 @@ pub struct AssocConst<'c> {
 
 pub struct AssocType<'c> {
     generics: &'c rustdoc_types::Generics,
-    bounds: Vec<&'c rustdoc_types::GenericBound>,
+    bounds: &'c [rustdoc_types::GenericBound],
     /// e.g. `type X = usize;`
     default: Option<&'c rustdoc_types::Type>,
 }
@@ -361,6 +391,10 @@ impl<'c> CrateQuery<'c> {
 
     pub fn krate(&self) -> &Crate {
         self.krate
+    }
+
+    pub fn version(&self) -> Option<&str> {
+        self.krate.crate_version.as_deref()
     }
 
     /// The root module (entry point)
@@ -541,6 +575,15 @@ impl<'c> CrateQuery<'c> {
     }
 }
 
+// consider:
+pub struct Accessor<'c, T, K> {
+    krate: &'c Crate,
+    pub inner: T,
+    kind: PhantomData<K>,
+}
+
+// type Item<'c, K> = Accessor<'c, &'c rustdoc_types::Item, K>;
+
 pub struct Item<'c, T /*, P*/> {
     krate: &'c Crate,
     pub id: &'c Id,
@@ -549,8 +592,49 @@ pub struct Item<'c, T /*, P*/> {
     pub inner: T,
 }
 
-// TODO: this
-pub enum ItemKind {}
+pub enum ItemKind<'c> {
+    Module(Item<'c, &'c rustdoc_types::Module>),
+    /// A dead-end item (does not reference the crate)
+    ExternCrate {
+        name: &'c str,
+        rename: Option<&'c str>,
+    },
+    Import(Item<'c, &'c rustdoc_types::Import>),
+
+    Union(Item<'c, &'c rustdoc_types::Union>),
+    Struct(Item<'c, &'c rustdoc_types::Struct>),
+    StructField(Item<'c, &'c rustdoc_types::Type>),
+    Enum(Item<'c, &'c rustdoc_types::Enum>),
+    Variant(Item<'c, &'c rustdoc_types::Variant>),
+
+    Function(Item<'c, &'c rustdoc_types::Function>),
+
+    Trait(Item<'c, &'c rustdoc_types::Trait>),
+    TraitAlias(Item<'c, &'c rustdoc_types::TraitAlias>),
+    Impl(Item<'c, &'c rustdoc_types::Impl>),
+
+    TypeAlias(Item<'c, &'c rustdoc_types::TypeAlias>),
+    OpaqueTy(Item<'c, &'c rustdoc_types::OpaqueTy>),
+    Constant(Item<'c, &'c rustdoc_types::Constant>),
+
+    Static(Item<'c, &'c rustdoc_types::Static>),
+
+    /// A dead-end item (does not reference the crate)
+    ///
+    /// `type`s from an extern block
+    ForeignType,
+
+    /// Declarative macro_rules! macro
+    Macro(Item<'c, Macro<'c>>),
+    ProcMacro(Item<'c, &'c rustdoc_types::ProcMacro>),
+
+    Primitive(Item<'c, &'c rustdoc_types::Primitive>),
+
+    AssocConst(Item<'c, AssocConst<'c>>),
+    AssocType(Item<'c, AssocType<'c>>),
+}
+
+pub struct Unknown;
 
 impl<'c, T> Item<'c, T> {
     pub fn new(
@@ -569,58 +653,57 @@ impl<'c, T> Item<'c, T> {
         }
     }
 
-    // TODO: this
+    pub fn krate(&self) -> &Crate {
+        self.krate
+    }
+
     pub fn kind(&self) -> ItemKind {
         match &self.item.inner {
-            rustdoc_types::ItemEnum::Module(_) => todo!(),
-            rustdoc_types::ItemEnum::ExternCrate { name, rename } => todo!(),
-            rustdoc_types::ItemEnum::Import(_) => todo!(),
-            rustdoc_types::ItemEnum::Union(_) => todo!(),
-            rustdoc_types::ItemEnum::Struct(_) => todo!(),
-            rustdoc_types::ItemEnum::StructField(_) => todo!(),
-            rustdoc_types::ItemEnum::Enum(_) => todo!(),
-            rustdoc_types::ItemEnum::Variant(_) => todo!(),
-            rustdoc_types::ItemEnum::Function(_) => todo!(),
-            rustdoc_types::ItemEnum::Trait(_) => todo!(),
-            rustdoc_types::ItemEnum::TraitAlias(_) => todo!(),
-            rustdoc_types::ItemEnum::Impl(_) => todo!(),
-            rustdoc_types::ItemEnum::TypeAlias(_) => todo!(),
-            rustdoc_types::ItemEnum::OpaqueTy(_) => todo!(),
-            rustdoc_types::ItemEnum::Constant(_) => todo!(),
-            rustdoc_types::ItemEnum::Static(_) => todo!(),
-            rustdoc_types::ItemEnum::ForeignType => todo!(),
-            rustdoc_types::ItemEnum::Macro(_) => todo!(),
-            rustdoc_types::ItemEnum::ProcMacro(_) => todo!(),
-            rustdoc_types::ItemEnum::Primitive(_) => todo!(),
-            rustdoc_types::ItemEnum::AssocConst { type_, default } => todo!(),
+            rustdoc_types::ItemEnum::Module(inner) => ItemKind::Module(self.morph(inner)),
+            rustdoc_types::ItemEnum::ExternCrate { name, rename } => ItemKind::ExternCrate {
+                name: name.as_str(),
+                rename: rename.as_deref(),
+            },
+            rustdoc_types::ItemEnum::Import(inner) => ItemKind::Import(self.morph(inner)),
+            rustdoc_types::ItemEnum::Union(inner) => ItemKind::Union(self.morph(inner)),
+            rustdoc_types::ItemEnum::Struct(inner) => ItemKind::Struct(self.morph(inner)),
+            rustdoc_types::ItemEnum::StructField(inner) => ItemKind::StructField(self.morph(inner)),
+            rustdoc_types::ItemEnum::Enum(inner) => ItemKind::Enum(self.morph(inner)),
+            rustdoc_types::ItemEnum::Variant(inner) => ItemKind::Variant(self.morph(inner)),
+            rustdoc_types::ItemEnum::Function(inner) => ItemKind::Function(self.morph(inner)),
+            rustdoc_types::ItemEnum::Trait(inner) => ItemKind::Trait(self.morph(inner)),
+            rustdoc_types::ItemEnum::TraitAlias(inner) => ItemKind::TraitAlias(self.morph(inner)),
+            rustdoc_types::ItemEnum::Impl(inner) => ItemKind::Impl(self.morph(inner)),
+            rustdoc_types::ItemEnum::TypeAlias(inner) => ItemKind::TypeAlias(self.morph(inner)),
+            rustdoc_types::ItemEnum::OpaqueTy(inner) => ItemKind::OpaqueTy(self.morph(inner)),
+            rustdoc_types::ItemEnum::Constant(inner) => ItemKind::Constant(self.morph(inner)),
+            rustdoc_types::ItemEnum::Static(inner) => ItemKind::Static(self.morph(inner)),
+            rustdoc_types::ItemEnum::ForeignType => ItemKind::ForeignType,
+            rustdoc_types::ItemEnum::Macro(inner) => {
+                ItemKind::Macro(self.morph(Macro(inner.as_str())))
+            }
+            rustdoc_types::ItemEnum::ProcMacro(inner) => ItemKind::ProcMacro(self.morph(inner)),
+            rustdoc_types::ItemEnum::Primitive(inner) => ItemKind::Primitive(self.morph(inner)),
+            rustdoc_types::ItemEnum::AssocConst { type_, default } => {
+                ItemKind::AssocConst(self.morph(AssocConst {
+                    type_,
+                    default: default.as_deref(),
+                }))
+            }
             rustdoc_types::ItemEnum::AssocType {
                 generics,
                 bounds,
                 default,
-            } => todo!(),
+            } => ItemKind::AssocType(self.morph(AssocType {
+                generics,
+                bounds: bounds.as_slice(),
+                default: default.as_ref(),
+            })),
         }
     }
 
-    /// Transform the current item to a different kind of item
-    fn morph<N>(&self, inner: N) -> Item<'c, N> {
-        Item {
-            krate: self.krate,
-            id: self.id,
-            item: self.item,
-            parent: self.parent,
-            inner,
-        }
-    }
-
-    /// Build a child item of the current item
-    fn child<C>(&self, id: &'c Id, item: &'c rustdoc_types::Item, inner: C) -> Item<'c, C> {
-        Item {
-            krate: self.krate,
-            id,
-            item,
-            parent: Some(self.id),
-            inner,
-        }
+    pub fn summary(&self) -> Option<&rustdoc_types::ItemSummary> {
+        self.krate.paths.get(self.id)
     }
 
     pub fn maybe_name(&self) -> Option<&str> {
@@ -659,31 +742,39 @@ impl<'c, T> Item<'c, T> {
     }
 
     // TODO: extern crates
+
+    /// Transform the current item to a different kind of item
+    fn morph<N>(&self, inner: N) -> Item<'c, N> {
+        Item {
+            krate: self.krate,
+            id: self.id,
+            item: self.item,
+            parent: self.parent,
+            inner,
+        }
+    }
+
+    /// Build a child item of the current item
+    fn child<C>(&self, id: &'c Id, item: &'c rustdoc_types::Item, inner: C) -> Item<'c, C> {
+        Item {
+            krate: self.krate,
+            id,
+            item,
+            parent: Some(self.id),
+            inner,
+        }
+    }
 }
 
-pub enum ModuleItemKind<'c> {
-    Module(Item<'c, &'c rustdoc_types::Module>),
-    Import(Item<'c, &'c rustdoc_types::Import>),
-    Union(Item<'c, &'c rustdoc_types::Union>),
-    Struct(Item<'c, &'c rustdoc_types::Struct>),
-    Enum(Item<'c, &'c rustdoc_types::Enum>),
-    Variant(Item<'c, &'c rustdoc_types::Variant>),
-    Function(Item<'c, &'c rustdoc_types::Function>),
-    Trait(Item<'c, &'c rustdoc_types::Trait>),
-    TraitAlias(Item<'c, &'c rustdoc_types::TraitAlias>),
-    Impl(Item<'c, &'c rustdoc_types::Impl>),
-    TypeAlias(Item<'c, &'c rustdoc_types::TypeAlias>),
-    OpaqueTy(Item<'c, &'c rustdoc_types::OpaqueTy>),
-    Constant(Item<'c, &'c rustdoc_types::Constant>),
-    Static(Item<'c, &'c rustdoc_types::Static>),
-    Macro(Item<'c, Macro<'c>>),
-    ProcMacro(Item<'c, &'c rustdoc_types::ProcMacro>),
-    Primitive(Item<'c, &'c rustdoc_types::Primitive>),
-}
+// <module>
 
 impl<'c> Item<'c, &'c rustdoc_types::Module> {
     pub fn name(&self) -> &str {
         self.maybe_name().expect("module has a name")
+    }
+
+    pub fn is_crate(&self) -> bool {
+        self.inner.is_crate
     }
 
     pub fn raw_items(
@@ -927,38 +1018,52 @@ impl<'c> Item<'c, &'c rustdoc_types::Module> {
     }
 }
 
-impl<'c> Item<'c, &'c rustdoc_types::Function> {
+/// a subset of [`ItemKind`]
+pub enum ModuleItemKind<'c> {
+    Module(Item<'c, &'c rustdoc_types::Module>),
+    Import(Item<'c, &'c rustdoc_types::Import>),
+    Union(Item<'c, &'c rustdoc_types::Union>),
+    Struct(Item<'c, &'c rustdoc_types::Struct>),
+    Enum(Item<'c, &'c rustdoc_types::Enum>),
+    Variant(Item<'c, &'c rustdoc_types::Variant>),
+    Function(Item<'c, &'c rustdoc_types::Function>),
+    Trait(Item<'c, &'c rustdoc_types::Trait>),
+    TraitAlias(Item<'c, &'c rustdoc_types::TraitAlias>),
+    Impl(Item<'c, &'c rustdoc_types::Impl>),
+    TypeAlias(Item<'c, &'c rustdoc_types::TypeAlias>),
+    OpaqueTy(Item<'c, &'c rustdoc_types::OpaqueTy>),
+    Constant(Item<'c, &'c rustdoc_types::Constant>),
+    Static(Item<'c, &'c rustdoc_types::Static>),
+    Macro(Item<'c, Macro<'c>>),
+    ProcMacro(Item<'c, &'c rustdoc_types::ProcMacro>),
+    Primitive(Item<'c, &'c rustdoc_types::Primitive>),
+}
+
+// </module>
+
+// <import>
+
+impl<'c> Item<'c, &'c rustdoc_types::Import> {
     pub fn name(&self) -> &str {
-        self.maybe_name().expect("function has a name")
+        self.maybe_name().expect("import has a name")
     }
 }
 
-impl<'c> Item<'c, &rustdoc_types::Import> {}
+// </import>
 
-/// A plain struct, e.g. `struct Foo { a: i32 }`
-pub struct StructPlain;
+// <union>
 
-/// A unit struct, e.g. `struct Bar;`
-pub struct StructUnit;
+impl<'c> Item<'c, &'c rustdoc_types::Union> {}
 
-/// A tuple struct, e.g. `struct Baz(i32)`
-pub struct StructTuple;
+// </union>
 
-pub struct Struct<'c, K> {
-    inner: &'c rustdoc_types::Struct,
-    kind: PhantomData<K>,
-}
+// <struct>
 
-impl<'c, K> Struct<'c, K> {
-    pub fn new(inner: &'c rustdoc_types::Struct) -> Self {
-        Self {
-            inner,
-            kind: PhantomData,
-        }
+impl<'c> Item<'c, &'c rustdoc_types::Struct> {
+    pub fn name(&self) -> &str {
+        self.maybe_name().expect("struct has a name")
     }
-}
 
-impl<'c> Item<'c, &rustdoc_types::Struct> {
     pub fn struct_kind(&self) -> StructItemKind {
         let Self {
             krate,
@@ -987,19 +1092,88 @@ pub enum StructItemKind<'c> {
     StructTuple(Item<'c, Struct<'c, StructTuple>>),
 }
 
-/// A trait impl, e.g. `impl Foo for Bar {}`
-pub struct ImplTrait;
+impl<'c, K> Item<'c, Struct<'c, K>> {
+    pub fn name(&self) -> &str {
+        self.maybe_name().expect("struct has a name")
+    }
 
-/// An inherent impl, e.g. `impl Bar {}`
-pub struct ImplInherent;
+    pub fn impls(&self) -> impl Iterator<Item = Item<&rustdoc_types::Impl>> {
+        self.inner
+            .inner
+            .impls
+            .fetch_many(self.krate)
+            .filter_map(|(id, item)| match &item.inner {
+                rustdoc_types::ItemEnum::Impl(impl_ @ rustdoc_types::Impl { trait_: None, .. }) => {
+                    Some(self.child(id, item, impl_))
+                }
+                _ => None,
+            })
+    }
 
-pub struct Impl<'c, K> {
-    inner: &'c rustdoc_types::Impl,
+    pub fn generics(&self) -> &rustdoc_types::Generics {
+        &self.inner.inner.generics
+    }
+}
+
+impl<'c> Item<'c, Struct<'c, StructPlain>> {
+    pub fn fields(&self) -> impl Iterator<Item = (&str, Item<'c, &rustdoc_types::Type>)> {
+        match &self.inner.inner.kind {
+            rustdoc_types::StructKind::Plain { fields, .. } => fields
+                .fetch_many(self.krate)
+                .filter_map(|(id, item)| match &item.inner {
+                    rustdoc_types::ItemEnum::StructField(field) => {
+                        let name = item.name.as_deref().unwrap();
+                        Some((name, self.child(id, item, field)))
+                    }
+                    _ => None,
+                }),
+            _ => todo!(),
+        }
+    }
+
+    pub fn fields_stripped(&self) -> bool {
+        matches!(&self.inner.inner.kind, rustdoc_types::StructKind::Plain { fields_stripped, .. } if *fields_stripped)
+    }
+}
+
+impl<'c> Item<'c, Struct<'c, StructUnit>> {}
+
+impl<'c> Item<'c, Struct<'c, StructTuple>> {
+    pub fn fields(&self) -> impl Iterator<Item = Option<Item<'c, &rustdoc_types::Type>>> {
+        match &self.inner.inner.kind {
+            rustdoc_types::StructKind::Tuple(fields) => {
+                fields.fetch_many(self.krate).map(|pair| match pair {
+                    Some((
+                        id,
+                        item @ rustdoc_types::Item {
+                            inner: rustdoc_types::ItemEnum::StructField(field),
+                            ..
+                        },
+                    )) => Some(self.child(id, item, field)),
+                    _ => None,
+                })
+            }
+            _ => todo!(),
+        }
+    }
+}
+
+pub struct Struct<'c, K> {
+    inner: &'c rustdoc_types::Struct,
     kind: PhantomData<K>,
 }
 
-impl<'c, K> Impl<'c, K> {
-    pub fn new(inner: &'c rustdoc_types::Impl) -> Self {
+/// A plain struct, e.g. `struct Foo { a: i32 }`
+pub struct StructPlain;
+
+/// A unit struct, e.g. `struct Bar;`
+pub struct StructUnit;
+
+/// A tuple struct, e.g. `struct Baz(i32)`
+pub struct StructTuple;
+
+impl<'c, K> Struct<'c, K> {
+    pub fn new(inner: &'c rustdoc_types::Struct) -> Self {
         Self {
             inner,
             kind: PhantomData,
@@ -1007,20 +1181,239 @@ impl<'c, K> Impl<'c, K> {
     }
 }
 
-impl<'c, K> Item<'c, Impl<'c, K>> {
-    pub fn items(&self) -> impl Iterator<Item = (&'c rustdoc_types::Id, &'c rustdoc_types::Item)> {
-        self.inner.inner.items.fetch_many(self.krate)
+// </struct>
+
+// <path>
+
+pub struct Path<'c> {
+    krate: &'c Crate,
+    inner: &'c rustdoc_types::Path,
+}
+
+impl<'c> Path<'c> {
+    pub fn new(krate: &'c Crate, inner: &'c rustdoc_types::Path) -> Self {
+        Self { krate, inner }
+    }
+
+    pub fn summary(&self) -> Option<&rustdoc_types::ItemSummary> {
+        self.krate.paths.get(&self.inner.id)
+    }
+
+    // this doesn't seem right
+    pub fn item(&self) -> Option<Item<'_, Unknown>> {
+        self.inner
+            .id
+            .fetch(self.krate)
+            .map(|(_, item)| Item::new(self.krate, &self.inner.id, item, None, Unknown))
     }
 }
 
-/// A plain variant, e.g. `Color::Red`
-pub struct VariantPlain;
+// </path>
 
-/// A tuple variant, e.g. `Color::Rgb(255, 0, 0)`
-pub struct VariantTuple;
+// <type>
 
-/// A struct variant, e.g. `Color::Rgb { red: 255, green: 0, blue: 0 }`
-pub struct VariantStruct;
+// TODO: a path can resolve to an Item or an ItemSummary
+impl<'c> Item<'c, &'c rustdoc_types::Type> {
+    pub fn type_kind(&self) -> TypeKind {
+        match self.inner {
+            rustdoc_types::Type::ResolvedPath(inner) => {
+                // assert_eq!(self.id, &inner.id); // this fails, so morph is not correct
+                TypeKind::ResolvedPath(Path::new(self.krate, inner))
+            }
+            rustdoc_types::Type::DynTrait(inner) => TypeKind::DynTrait(self.morph(inner)),
+            rustdoc_types::Type::Generic(inner) => TypeKind::Generic(inner.as_str()),
+            rustdoc_types::Type::Primitive(inner) => TypeKind::Primitive(inner.as_str()),
+            rustdoc_types::Type::FunctionPointer(inner) => {
+                TypeKind::FunctionPointer(self.morph(inner))
+            }
+            rustdoc_types::Type::Tuple(inner) => TypeKind::Tuple(self.morph(inner)),
+            rustdoc_types::Type::Slice(inner) => TypeKind::Slice(self.morph(inner)),
+            rustdoc_types::Type::Array { type_, len } => TypeKind::Array(self.morph(Array {
+                type_,
+                len: len.as_str(),
+            })),
+            rustdoc_types::Type::ImplTrait(inner) => TypeKind::ImplTrait(self.morph(inner)),
+            rustdoc_types::Type::Infer => TypeKind::Infer,
+            rustdoc_types::Type::RawPointer { mutable, type_ } => {
+                TypeKind::RawPointer(self.morph(RawPointer {
+                    mutable: *mutable,
+                    type_,
+                }))
+            }
+            rustdoc_types::Type::BorrowedRef {
+                lifetime,
+                mutable,
+                type_,
+            } => TypeKind::BorrowedRef(self.morph(BorrowedRef {
+                lifetime: lifetime.as_deref(),
+                mutable: *mutable,
+                type_,
+            })),
+            rustdoc_types::Type::QualifiedPath {
+                name,
+                args,
+                self_type,
+                trait_,
+            } => TypeKind::QualifiedPath(self.morph(QualifiedPath {
+                name,
+                args,
+                self_type,
+                trait_: trait_.as_ref(),
+            })),
+        }
+    }
+}
+
+pub enum TypeKind<'c> {
+    /// Structs, enums, and unions
+    ResolvedPath(Path<'c>),
+    DynTrait(Item<'c, &'c rustdoc_types::DynTrait>),
+    /// Parameterized types
+    Generic(&'c str),
+    /// Built in numeric (i*, u*, f*) types, bool, and char
+    Primitive(&'c str),
+    /// `extern "ABI" fn`
+    FunctionPointer(Item<'c, &'c rustdoc_types::FunctionPointer>),
+    /// `(String, u32, Box<usize>)`
+    Tuple(Item<'c, &'c [rustdoc_types::Type]>),
+    /// `[u32]`
+    Slice(Item<'c, &'c rustdoc_types::Type>),
+    /// [u32; 15]
+    Array(Item<'c, Array<'c>>),
+    /// `impl TraitA + TraitB + ...`
+    ImplTrait(Item<'c, &'c [rustdoc_types::GenericBound]>),
+    /// `_`
+    Infer,
+    /// `*mut u32`, `*u8`, etc.
+    RawPointer(Item<'c, RawPointer<'c>>),
+    /// `&'a mut String`, `&str`, etc.
+    BorrowedRef(Item<'c, BorrowedRef<'c>>),
+    /// Associated types like `<Type as Trait>::Name` and `T::Item` where
+    /// `T: Iterator` or inherent associated types like `Struct::Name`.
+    QualifiedPath(Item<'c, QualifiedPath<'c>>),
+}
+
+/// [u32; 15]
+pub struct Array<'c> {
+    type_: &'c rustdoc_types::Type,
+    len: &'c str,
+}
+
+/// `*mut u32`, `*u8`, etc.
+pub struct RawPointer<'c> {
+    mutable: bool,
+    type_: &'c rustdoc_types::Type,
+}
+/// `&'a mut String`, `&str`, etc.
+pub struct BorrowedRef<'c> {
+    lifetime: Option<&'c str>,
+    mutable: bool,
+    type_: &'c rustdoc_types::Type,
+}
+/// Associated types like `<Type as Trait>::Name` and `T::Item` where
+/// `T: Iterator` or inherent associated types like `Struct::Name`.
+pub struct QualifiedPath<'c> {
+    name: &'c str,
+    args: &'c rustdoc_types::GenericArgs,
+    self_type: &'c rustdoc_types::Type,
+    /// `None` iff this is an *inherent* associated type.
+    trait_: Option<&'c rustdoc_types::Path>,
+}
+
+// </type>
+
+// <enum>
+
+impl<'c> Item<'c, &'c rustdoc_types::Enum> {
+    pub fn name(&self) -> &str {
+        self.maybe_name().expect("enum has a name")
+    }
+
+    pub fn inherent_impls(&self) -> impl Iterator<Item = Item<'c, &rustdoc_types::Impl>> {
+        self.inner
+            .impls
+            .fetch_many(self.krate)
+            .filter_map(|(id, item)| match &item.inner {
+                rustdoc_types::ItemEnum::Impl(impl_ @ rustdoc_types::Impl { trait_: None, .. }) => {
+                    Some(self.child(id, item, impl_))
+                }
+                _ => None,
+            })
+    }
+
+    pub fn trait_impls(&self) -> impl Iterator<Item = Item<'c, &rustdoc_types::Impl>> {
+        self.inner
+            .impls
+            .fetch_many(self.krate)
+            .filter_map(|(id, item)| match &item.inner {
+                rustdoc_types::ItemEnum::Impl(
+                    impl_ @ rustdoc_types::Impl {
+                        trait_: Some(_), ..
+                    },
+                ) => Some(self.child(id, item, impl_)),
+                _ => None,
+            })
+    }
+
+    pub fn variants(&self) -> impl Iterator<Item = Item<'c, &rustdoc_types::Variant>> {
+        self.inner
+            .variants
+            .fetch_many(self.krate)
+            .filter_map(|(id, item)| match &item.inner {
+                rustdoc_types::ItemEnum::Variant(variant) => Some(self.child(id, item, variant)),
+                _ => None,
+            })
+    }
+
+    pub fn generics(&self) -> &rustdoc_types::Generics {
+        &self.inner.generics
+    }
+}
+
+// </enum>
+
+// <variant>
+
+impl<'c> Item<'c, &'c rustdoc_types::Variant> {
+    pub fn name(&self) -> &str {
+        self.maybe_name().expect("variant has a name")
+    }
+
+    pub fn variant_kind(&self) -> VariantItemKind {
+        match &self.inner.kind {
+            rustdoc_types::VariantKind::Plain => {
+                VariantItemKind::Plain(self.morph(Variant::new(self.inner)))
+            }
+            rustdoc_types::VariantKind::Tuple(_) => {
+                VariantItemKind::Tuple(self.morph(Variant::new(self.inner)))
+            }
+            rustdoc_types::VariantKind::Struct { .. } => {
+                VariantItemKind::Struct(self.morph(Variant::new(self.inner)))
+            }
+        }
+    }
+
+    pub fn as_plain_kind(&self) -> Option<Item<'c, Variant<'c, VariantPlain>>> {
+        match &self.inner.kind {
+            rustdoc_types::VariantKind::Plain => Some(self.morph(Variant::new(self.inner))),
+            _ => None,
+        }
+    }
+
+    pub fn as_tuple_kind(&self) -> Option<Item<'c, Variant<'c, VariantTuple>>> {
+        match &self.inner.kind {
+            rustdoc_types::VariantKind::Tuple(_) => Some(self.morph(Variant::new(self.inner))),
+            _ => None,
+        }
+    }
+
+    pub fn as_struct_kind(&self) -> Option<Item<'c, Variant<'c, VariantStruct>>> {
+        match &self.inner.kind {
+            rustdoc_types::VariantKind::Struct { .. } => Some(self.morph(Variant::new(self.inner))),
+            _ => None,
+        }
+    }
+}
 
 /// The kind of an enum variant
 pub enum VariantItemKind<'c> {
@@ -1030,33 +1423,6 @@ pub enum VariantItemKind<'c> {
     Tuple(Item<'c, Variant<'c, VariantTuple>>),
     /// A struct variant, e.g. `Color::Rgb { red: 255, green: 0, blue: 0 }`
     Struct(Item<'c, Variant<'c, VariantStruct>>),
-}
-
-/// The variant of an enum
-pub struct Variant<'c, K> {
-    inner: &'c rustdoc_types::Variant,
-    kind: PhantomData<K>,
-}
-
-impl<'c, K> Variant<'c, K> {
-    pub fn new(inner: &'c rustdoc_types::Variant) -> Self {
-        Self {
-            inner,
-            kind: PhantomData,
-        }
-    }
-}
-
-impl<'c> Item<'c, &rustdoc_types::Trait> {
-    pub fn name(&self) -> &str {
-        self.maybe_name().expect("trait has a name")
-    }
-}
-
-impl<'c, K> Item<'c, Variant<'c, K>> {
-    pub fn name(&self) -> &str {
-        self.maybe_name().expect("variant has a name")
-    }
 }
 
 impl<'c> Item<'c, Variant<'c, VariantPlain>> {
@@ -1114,156 +1480,140 @@ impl<'c> Item<'c, Variant<'c, VariantStruct>> {
     }
 }
 
-impl<'c> Item<'c, &'c rustdoc_types::Variant> {
+/// The variant of an enum
+pub struct Variant<'c, K> {
+    inner: &'c rustdoc_types::Variant,
+    kind: PhantomData<K>,
+}
+
+/// A plain variant, e.g. `Color::Red`
+pub struct VariantPlain;
+
+/// A tuple variant, e.g. `Color::Rgb(255, 0, 0)`
+pub struct VariantTuple;
+
+/// A struct variant, e.g. `Color::Rgb { red: 255, green: 0, blue: 0 }`
+pub struct VariantStruct;
+
+impl<'c, K> Variant<'c, K> {
+    pub fn new(inner: &'c rustdoc_types::Variant) -> Self {
+        Self {
+            inner,
+            kind: PhantomData,
+        }
+    }
+}
+
+impl<'c, K> Item<'c, Variant<'c, K>> {
     pub fn name(&self) -> &str {
         self.maybe_name().expect("variant has a name")
     }
-
-    pub fn variant_kind(&self) -> VariantItemKind {
-        match &self.inner.kind {
-            rustdoc_types::VariantKind::Plain => {
-                VariantItemKind::Plain(self.morph(Variant::new(self.inner)))
-            }
-            rustdoc_types::VariantKind::Tuple(_) => {
-                VariantItemKind::Tuple(self.morph(Variant::new(self.inner)))
-            }
-            rustdoc_types::VariantKind::Struct { .. } => {
-                VariantItemKind::Struct(self.morph(Variant::new(self.inner)))
-            }
-        }
-    }
-
-    pub fn as_plain_kind(&self) -> Option<Item<'c, Variant<'c, VariantPlain>>> {
-        match &self.inner.kind {
-            rustdoc_types::VariantKind::Plain => Some(self.morph(Variant::new(self.inner))),
-            _ => None,
-        }
-    }
-
-    pub fn as_tuple_kind(&self) -> Option<Item<'c, Variant<'c, VariantTuple>>> {
-        match &self.inner.kind {
-            rustdoc_types::VariantKind::Tuple(_) => Some(self.morph(Variant::new(self.inner))),
-            _ => None,
-        }
-    }
-
-    pub fn as_struct_kind(&self) -> Option<Item<'c, Variant<'c, VariantStruct>>> {
-        match &self.inner.kind {
-            rustdoc_types::VariantKind::Struct { .. } => Some(self.morph(Variant::new(self.inner))),
-            _ => None,
-        }
-    }
 }
-
-impl<'c> Item<'c, &'c rustdoc_types::Enum> {
+impl<'c> Item<'c, &'c rustdoc_types::Function> {
     pub fn name(&self) -> &str {
-        self.maybe_name().expect("enum has a name")
-    }
-
-    pub fn inherent_impls(&self) -> impl Iterator<Item = Item<'c, &rustdoc_types::Impl>> {
-        self.inner
-            .impls
-            .fetch_many(self.krate)
-            .filter_map(|(id, item)| match &item.inner {
-                rustdoc_types::ItemEnum::Impl(impl_ @ rustdoc_types::Impl { trait_: None, .. }) => {
-                    Some(self.child(id, item, impl_))
-                }
-                _ => None,
-            })
-    }
-
-    pub fn trait_impls(&self) -> impl Iterator<Item = Item<'c, &rustdoc_types::Impl>> {
-        self.inner
-            .impls
-            .fetch_many(self.krate)
-            .filter_map(|(id, item)| match &item.inner {
-                rustdoc_types::ItemEnum::Impl(
-                    impl_ @ rustdoc_types::Impl {
-                        trait_: Some(_), ..
-                    },
-                ) => Some(self.child(id, item, impl_)),
-                _ => None,
-            })
-    }
-
-    pub fn variants(&self) -> impl Iterator<Item = Item<'c, &rustdoc_types::Variant>> {
-        self.inner
-            .variants
-            .fetch_many(self.krate)
-            .filter_map(|(id, item)| match &item.inner {
-                rustdoc_types::ItemEnum::Variant(variant) => Some(self.child(id, item, variant)),
-                _ => None,
-            })
-    }
-
-    pub fn generics(&self) -> &rustdoc_types::Generics {
-        &self.inner.generics
+        self.maybe_name().expect("function has a name")
     }
 }
 
-impl<'c, K> Item<'c, Struct<'c, K>> {
+impl<'c> Item<'c, &'c rustdoc_types::Trait> {
     pub fn name(&self) -> &str {
-        self.maybe_name().expect("struct has a name")
-    }
-
-    pub fn impls(&self) -> impl Iterator<Item = Item<&rustdoc_types::Impl>> {
-        self.inner
-            .inner
-            .impls
-            .fetch_many(self.krate)
-            .filter_map(|(id, item)| match &item.inner {
-                rustdoc_types::ItemEnum::Impl(impl_ @ rustdoc_types::Impl { trait_: None, .. }) => {
-                    Some(self.child(id, item, impl_))
-                }
-                _ => None,
-            })
-    }
-
-    pub fn generics(&self) -> &rustdoc_types::Generics {
-        &self.inner.inner.generics
+        self.maybe_name().expect("trait has a name")
     }
 }
 
-impl<'c> Item<'c, Struct<'c, StructPlain>> {
-    pub fn fields(&self) -> impl Iterator<Item = (&str, Item<'c, &rustdoc_types::Type>)> {
-        match &self.inner.inner.kind {
-            rustdoc_types::StructKind::Plain { fields, .. } => fields
-                .fetch_many(self.krate)
-                .filter_map(|(id, item)| match &item.inner {
-                    rustdoc_types::ItemEnum::StructField(field) => {
-                        let name = item.name.as_deref().unwrap();
-                        Some((name, self.child(id, item, field)))
-                    }
-                    _ => None,
-                }),
-            _ => todo!(),
-        }
-    }
+// </variant>
 
-    pub fn fields_stripped(&self) -> bool {
-        matches!(&self.inner.inner.kind, rustdoc_types::StructKind::Plain { fields_stripped, .. } if *fields_stripped)
+// <trait-alias>
+
+impl<'c> Item<'c, &'c rustdoc_types::TraitAlias> {}
+
+// </trait-alias>
+
+// <impl>
+
+impl<'c> Item<'c, &'c rustdoc_types::Impl> {}
+
+impl<'c, K> Item<'c, Impl<'c, K>> {
+    pub fn items(&self) -> impl Iterator<Item = (&'c rustdoc_types::Id, &'c rustdoc_types::Item)> {
+        self.inner.inner.items.fetch_many(self.krate)
     }
 }
 
-impl<'c> Item<'c, Struct<'c, StructTuple>> {
-    pub fn fields(&self) -> impl Iterator<Item = Option<Item<'c, &rustdoc_types::Type>>> {
-        match &self.inner.inner.kind {
-            rustdoc_types::StructKind::Tuple(fields) => {
-                fields.fetch_many(self.krate).map(|pair| match pair {
-                    Some((
-                        id,
-                        item @ rustdoc_types::Item {
-                            inner: rustdoc_types::ItemEnum::StructField(field),
-                            ..
-                        },
-                    )) => Some(self.child(id, item, field)),
-                    _ => None,
-                })
-            }
-            _ => todo!(),
+pub struct Impl<'c, K> {
+    inner: &'c rustdoc_types::Impl,
+    kind: PhantomData<K>,
+}
+
+/// A trait impl, e.g. `impl Foo for Bar {}`
+pub struct ImplTrait;
+
+/// An inherent impl, e.g. `impl Bar {}`
+pub struct ImplInherent;
+
+impl<'c, K> Impl<'c, K> {
+    pub fn new(inner: &'c rustdoc_types::Impl) -> Self {
+        Self {
+            inner,
+            kind: PhantomData,
         }
     }
 }
+
+// </impl>
+
+// <type-alias>
+
+impl<'c> Item<'c, &'c rustdoc_types::TypeAlias> {}
+
+// </type-alias>
+
+// <opaque-ty>
+
+impl<'c> Item<'c, &'c rustdoc_types::OpaqueTy> {}
+
+// </opaque-ty>
+
+// <constant>
+
+impl<'c> Item<'c, &'c rustdoc_types::Constant> {}
+
+// </constant>
+
+// <static>
+
+impl<'c> Item<'c, &'c rustdoc_types::Static> {}
+
+// </static>
+
+// <macro>
+
+impl<'c> Item<'c, Macro<'c>> {}
+
+// </macro>
+
+// <proc-macro>
+
+impl<'c> Item<'c, &'c rustdoc_types::ProcMacro> {}
+
+// </proc-macro>
+
+// <primitive>
+
+impl<'c> Item<'c, &'c rustdoc_types::Primitive> {}
+
+// </primitive>
+
+// <assoc-const>
+
+impl<'c> Item<'c, AssocConst<'c>> {}
+
+// </assoc-const>
+
+// <assoc-type>
+
+impl<'c> Item<'c, AssocType<'c>> {}
+
+// </assoc-type>
 
 #[cfg(test)]
 mod tests {

@@ -3,16 +3,20 @@ use std::{
     fmt::Write,
     // io::Write,
     fs,
+    os::windows::process,
 };
 
 use clap::Parser;
 use colored::{ColoredString, Colorize};
 use convert_case::{Case, Casing};
 use io_adapters::WriteExtension;
+use query::StructItemKind;
 use rustdoc_types::{
     Crate, Function, GenericArg, GenericArgs, Id, Impl, Item, ItemEnum, ItemKind, ItemSummary,
     Struct, StructKind, Type, Visibility,
 };
+
+use crate::query::IdFetchExt;
 
 pub mod query;
 
@@ -21,6 +25,139 @@ pub mod query;
 pub struct Args;
 
 pub fn main(_args: Args) {
+    // TODO: should be passed through args
+    let file = fs::read_to_string("macroquad.json").unwrap();
+    let namespace = "maxiquad";
+
+    let krate: Crate = serde_json::from_str(&file)
+        .expect("Not a valid rustdoc JSON export, or not the right version");
+
+    use query::*;
+    let krate = CrateQuery::new(&krate);
+
+    let root = krate.root();
+    assert!(root.is_crate());
+    let name = root.name();
+    dbg!(name);
+
+    println!(
+        "{}:{}@{}",
+        namespace.to_case(Case::Kebab),
+        name.to_case(Case::Kebab),
+        krate.version().unwrap()
+    );
+
+    println!("module count = {}", krate.all_modules().count());
+
+    process_module(root, 0);
+}
+
+fn process_module(module: query::Item<&rustdoc_types::Module>, depth: usize) {
+    let indent = " ".repeat(depth * 4);
+    for struct_ in module.structs() {
+        match struct_.struct_kind() {
+            StructItemKind::StructPlain(plain) if plain.fields_stripped() => {
+                if plain.impls().count() > 0 {
+                    println!(
+                        "{indent}resource {} {{",
+                        struct_.name().to_case(Case::Kebab)
+                    );
+                    for impl_ in plain.impls() {
+                        println!(
+                            "{indent}    impl {:?}",
+                            impl_.maybe_name().map(|s| s.to_case(Case::Kebab))
+                        );
+                    }
+                    println!("{indent}}}");
+                } else {
+                    println!("{indent}resource {};", struct_.name().to_case(Case::Kebab));
+                }
+            }
+            StructItemKind::StructPlain(plain) => {
+                println!("{indent}record {} {{", struct_.name().to_case(Case::Kebab));
+                for field in plain.fields() {
+                    match field.1.type_kind() {
+                        query::TypeKind::ResolvedPath(path) => {
+                            // if let Some((id, inner)) = path.inner.id.fetch(module.krate()) {
+                            //     println!(
+                            //         "{indent}    {field}: {path:?},",
+                            //         field = field.0,
+                            //         path = path.krate().paths.get(id).unwrap().path.join("::"),
+                            //     );
+                            // } else {
+                            //     todo!("unresolved path")
+                            // }
+                            match path.summary() {
+                                Some(summary) if summary.crate_id == 0 => {
+                                    assert_eq!(summary.kind, rustdoc_types::ItemKind::StructField);
+                                    println!(
+                                        "{indent}    {field}: {path:?},",
+                                        field = field.0,
+                                        path = summary.path.join("::"),
+                                    )
+                                }
+                                Some(summary) => {
+                                    assert_eq!(summary.kind, rustdoc_types::ItemKind::StructField);
+                                    println!(
+                                        "{indent}    {field}: {path:?},",
+                                        field = field.0,
+                                        path = summary.path.join("::"),
+                                    )
+                                }
+                                None => todo!(),
+                            }
+                        }
+                        query::TypeKind::DynTrait(_) => todo!("query::TypeKind::DynTrait"),
+                        query::TypeKind::Generic(_) => todo!("query::TypeKind::Generic"),
+                        query::TypeKind::Primitive(primitive) => {
+                            println!("{indent}    {field}: {primitive}", field = field.0)
+                        }
+                        query::TypeKind::FunctionPointer(_) => {
+                            todo!("query::TypeKind::FunctionPointer")
+                        }
+                        query::TypeKind::Tuple(_) => todo!("query::TypeKind::Tuple"),
+                        query::TypeKind::Slice(_) => todo!("query::TypeKind::Slice"),
+                        query::TypeKind::Array(_) => todo!("query::TypeKind::Array"),
+                        query::TypeKind::ImplTrait(_) => todo!("query::TypeKind::ImplTrait"),
+                        query::TypeKind::Infer => todo!("query::TypeKind::Infer"),
+                        query::TypeKind::RawPointer(_) => todo!("query::TypeKind::RawPointer"),
+                        query::TypeKind::BorrowedRef(_) => todo!("query::TypeKind::BorrowedRef"),
+                        query::TypeKind::QualifiedPath(_) => {
+                            todo!("query::TypeKind::QualifiedPath")
+                        }
+                    };
+                }
+                println!("{indent}}}");
+            }
+            StructItemKind::StructUnit(unit) => {
+                println!("{indent}record {};", struct_.name().to_case(Case::Kebab));
+            }
+            StructItemKind::StructTuple(tuple) => {
+                print!(
+                    "{indent}type {} = tuple<",
+                    struct_.name().to_case(Case::Kebab)
+                );
+                print!("TODO");
+                println!(">;")
+            }
+        }
+        println!();
+    }
+
+    for enum_ in module.enums() {
+        println!("{indent}variant {} {{", enum_.name().to_case(Case::Kebab));
+        println!("{indent}    TODO");
+        // where is Error?
+        println!("{indent}}}");
+    }
+
+    for module in module.modules() {
+        println!("{indent}(module) {}", module.name().to_case(Case::Kebab));
+        process_module(module, depth + 1);
+    }
+}
+
+fn main_old(_args: Args) {
     let file = fs::read_to_string("macroquad.json").unwrap();
     let krate: Crate = serde_json::from_str(&file)
         .expect("Not a valid rustdoc JSON export, or not the right version");
