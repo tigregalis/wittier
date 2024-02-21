@@ -3,7 +3,6 @@ use std::{
     fmt::Write,
     // io::Write,
     fs,
-    os::windows::process,
 };
 
 use clap::Parser;
@@ -12,11 +11,9 @@ use convert_case::{Case, Casing};
 use io_adapters::WriteExtension;
 use query::StructItemKind;
 use rustdoc_types::{
-    Crate, Function, GenericArg, GenericArgs, Id, Impl, Item, ItemEnum, ItemKind, ItemSummary,
-    Struct, StructKind, Type, Visibility,
+    Crate, Function, GenericArg, GenericArgs, Id, Impl, Item, ItemEnum, ItemSummary, Struct,
+    StructKind, Type, Visibility,
 };
-
-use crate::query::IdFetchExt;
 
 pub mod query;
 
@@ -40,6 +37,9 @@ pub fn main(_args: Args) {
     let name = root.name();
     dbg!(name);
 
+    let root_crate_id = root.data.crate_id;
+    dbg!(root_crate_id);
+
     println!(
         "{}:{}@{}",
         namespace.to_case(Case::Kebab),
@@ -49,99 +49,248 @@ pub fn main(_args: Args) {
 
     println!("module count = {}", krate.all_modules().count());
 
-    process_module(root, 0);
+    process_module(root_crate_id, root, 0);
 }
 
-fn process_module(module: query::Item<&rustdoc_types::Module>, depth: usize) {
+fn process_module(root_crate_id: u32, module: query::Item<&rustdoc_types::Module>, depth: usize) {
     let indent = " ".repeat(depth * 4);
     for struct_ in module.structs() {
-        match struct_.struct_kind() {
-            StructItemKind::StructPlain(plain) if plain.fields_stripped() => {
-                if plain.impls().count() > 0 {
-                    println!(
-                        "{indent}resource {} {{",
-                        struct_.name().to_case(Case::Kebab)
-                    );
-                    for impl_ in plain.impls() {
-                        println!(
-                            "{indent}    impl {:?}",
-                            impl_.maybe_name().map(|s| s.to_case(Case::Kebab))
-                        );
+        let struct_name = struct_.name().to_case(Case::Kebab);
+        let wit = 'wit: {
+            match struct_.struct_kind() {
+                StructItemKind::StructPlain(plain) => {
+                    if plain.fields_stripped() {
+                        if plain.impls().count() > 0 {
+                            println!("{indent}resource {} {{", struct_name);
+                            for impl_ in plain.impls() {
+                                println!(
+                                    "{indent}    impl {:?}",
+                                    impl_.maybe_name().map(|s| s.to_case(Case::Kebab))
+                                );
+                            }
+                            println!("{indent}}}");
+                        } else {
+                            println!("{indent}resource {};", struct_name);
+                        }
+
+                        break 'wit WitType {
+                            kind: WitTypeKind::Resource(struct_name),
+                            functions: (),
+                            source: Source::Local(plain.data.id.clone()),
+                        };
                     }
-                    println!("{indent}}}");
-                } else {
-                    println!("{indent}resource {};", struct_.name().to_case(Case::Kebab));
-                }
-            }
-            StructItemKind::StructPlain(plain) => {
-                println!("{indent}record {} {{", struct_.name().to_case(Case::Kebab));
-                for field in plain.fields() {
-                    match field.1.type_kind() {
-                        query::TypeKind::ResolvedPath(path) => {
-                            // if let Some((id, inner)) = path.inner.id.fetch(module.krate()) {
-                            //     println!(
-                            //         "{indent}    {field}: {path:?},",
-                            //         field = field.0,
-                            //         path = path.krate().paths.get(id).unwrap().path.join("::"),
-                            //     );
-                            // } else {
-                            //     todo!("unresolved path")
-                            // }
-                            match path.summary() {
-                                Some(summary) if summary.crate_id == 0 => {
-                                    assert_eq!(summary.kind, rustdoc_types::ItemKind::StructField);
-                                    println!(
-                                        "{indent}    {field}: {path:?},",
-                                        field = field.0,
-                                        path = summary.path.join("::"),
-                                    )
+
+                    println!("{indent}record {} {{", struct_name);
+                    let mut fields = Vec::with_capacity(plain.fields().count());
+                    for (field_name, field_type) in plain.fields() {
+                        match field_type.type_kind() {
+                            query::TypeKind::ResolvedPath(path) => {
+                                if let Some(item) = path.item() {
+                                    if item.data.crate_id == root_crate_id {
+                                        println!(
+                                            "{indent}    {field_name}: {path:?}, // local",
+                                            path = item.maybe_name().unwrap(),
+                                        );
+                                        fields.push((
+                                            field_name.to_string(),
+                                            WitType {
+                                                kind: todo!("depends on the path"),
+                                                functions: (),
+                                                source: todo!(),
+                                            },
+                                        ))
+                                    } else {
+                                        todo!();
+                                    }
+                                } else if let Some(summary) = path.summary() {
+                                    if summary.crate_id == root_crate_id {
+                                        println!(
+                                            "{indent}    {field_name}: {path}, // local",
+                                            path = summary.path.join("::"),
+                                        );
+                                        fields.push((
+                                            field_name.to_string(),
+                                            WitType {
+                                                kind: todo!(),
+                                                functions: todo!(),
+                                                source: todo!(),
+                                            },
+                                        ));
+                                    }
+                                } else {
+                                    todo!();
                                 }
-                                Some(summary) => {
-                                    assert_eq!(summary.kind, rustdoc_types::ItemKind::StructField);
-                                    println!(
-                                        "{indent}    {field}: {path:?},",
-                                        field = field.0,
-                                        path = summary.path.join("::"),
-                                    )
-                                }
-                                None => todo!(),
+                            }
+                            query::TypeKind::DynTrait(_) => todo!("query::TypeKind::DynTrait"),
+                            // if it contains a generic, make it a resource
+                            query::TypeKind::Generic(_) => {
+                                println!(
+                                    "{indent}    {field_name}: unsupported, // UNSUPPORTED: query::TypeKind::Generic"
+                                );
+                                break 'wit WitType {
+                                    kind: WitTypeKind::Resource(struct_name),
+                                    functions: (),
+                                    source: Source::Foreign(None),
+                                };
+                            }
+                            query::TypeKind::Primitive(primitive) => {
+                                println!("{indent}    {field_name}: {primitive},");
+                                fields.push((
+                                    field_name.to_string(),
+                                    WitType {
+                                        kind: WitTypeKind::from_rust_type(primitive)
+                                            .expect("known primitive"),
+                                        functions: (),
+                                        source: Source::Foreign(None),
+                                    },
+                                ));
+                            }
+                            query::TypeKind::FunctionPointer(_) => {
+                                todo!("query::TypeKind::FunctionPointer")
+                            }
+                            query::TypeKind::Tuple(_) => todo!("query::TypeKind::Tuple"),
+                            query::TypeKind::Slice(_) => todo!("query::TypeKind::Slice"),
+                            query::TypeKind::Array(_) => todo!("query::TypeKind::Array"),
+                            query::TypeKind::ImplTrait(_) => todo!("query::TypeKind::ImplTrait"),
+                            query::TypeKind::Infer => todo!("query::TypeKind::Infer"),
+                            query::TypeKind::RawPointer(_) => todo!("query::TypeKind::RawPointer"),
+                            // if it contains a borrow, make it a resource
+                            query::TypeKind::BorrowedRef(_) => {
+                                println!(
+                                    "{indent}    {field_name}: unsupported, // UNSUPPORTED: query::TypeKind::BorrowedRef"
+                                );
+                                break 'wit WitType {
+                                    kind: WitTypeKind::Resource(struct_name),
+                                    functions: (),
+                                    source: todo!(),
+                                };
+                            }
+                            query::TypeKind::QualifiedPath(_) => {
+                                todo!("query::TypeKind::QualifiedPath")
                             }
                         }
-                        query::TypeKind::DynTrait(_) => todo!("query::TypeKind::DynTrait"),
-                        query::TypeKind::Generic(_) => todo!("query::TypeKind::Generic"),
-                        query::TypeKind::Primitive(primitive) => {
-                            println!("{indent}    {field}: {primitive}", field = field.0)
-                        }
-                        query::TypeKind::FunctionPointer(_) => {
-                            todo!("query::TypeKind::FunctionPointer")
-                        }
-                        query::TypeKind::Tuple(_) => todo!("query::TypeKind::Tuple"),
-                        query::TypeKind::Slice(_) => todo!("query::TypeKind::Slice"),
-                        query::TypeKind::Array(_) => todo!("query::TypeKind::Array"),
-                        query::TypeKind::ImplTrait(_) => todo!("query::TypeKind::ImplTrait"),
-                        query::TypeKind::Infer => todo!("query::TypeKind::Infer"),
-                        query::TypeKind::RawPointer(_) => todo!("query::TypeKind::RawPointer"),
-                        query::TypeKind::BorrowedRef(_) => todo!("query::TypeKind::BorrowedRef"),
-                        query::TypeKind::QualifiedPath(_) => {
-                            todo!("query::TypeKind::QualifiedPath")
-                        }
-                    };
+                    }
+                    println!("{indent}}}");
+                    WitType {
+                        kind: WitTypeKind::Record(Record {
+                            name: struct_name,
+                            fields,
+                        }),
+                        functions: (),
+                        source: if struct_.data.crate_id == root_crate_id {
+                            Source::Local(struct_.data.id.clone())
+                        } else {
+                            Source::Foreign(Some(struct_.data.id.clone()))
+                        },
+                    }
                 }
-                println!("{indent}}}");
+                StructItemKind::StructUnit(unit) => {
+                    println!("{indent}record {}; // unit struct", struct_name);
+                    todo!()
+                }
+                StructItemKind::StructTuple(tuple) => {
+                    print!("{indent}type {} = tuple<", struct_name);
+
+                    let mut fields = Vec::new();
+                    for (i, field_type) in tuple.fields().enumerate() {
+                        if i > 0 {
+                            print!(", ");
+                        }
+                        print!("TODO");
+                        if let Some(field_type) = field_type {
+                            match field_type.type_kind() {
+                                query::TypeKind::ResolvedPath(path) => {
+                                    if let Some(item) = path.item() {
+                                        if item.data.crate_id == root_crate_id {
+                                            fields.push(WitType {
+                                                kind: todo!("depends on the path"),
+                                                functions: (),
+                                                source: todo!(),
+                                            })
+                                        } else {
+                                            todo!();
+                                        }
+                                    } else if let Some(summary) = path.summary() {
+                                        if summary.crate_id == root_crate_id {
+                                            fields.push(WitType {
+                                                kind: todo!(),
+                                                functions: todo!(),
+                                                source: todo!(),
+                                            });
+                                        }
+                                    } else {
+                                        todo!();
+                                    }
+                                }
+                                query::TypeKind::DynTrait(_) => todo!("query::TypeKind::DynTrait"),
+                                // if it contains a generic, make it a resource
+                                query::TypeKind::Generic(_) => {
+                                    break 'wit WitType {
+                                        kind: WitTypeKind::Resource(struct_name),
+                                        functions: (),
+                                        source: Source::Foreign(None),
+                                    };
+                                }
+                                query::TypeKind::Primitive(primitive) => {
+                                    fields.push(WitType {
+                                        kind: WitTypeKind::from_rust_type(primitive)
+                                            .expect("known primitive"),
+                                        functions: (),
+                                        source: Source::Foreign(None),
+                                    });
+                                }
+                                query::TypeKind::FunctionPointer(_) => {
+                                    todo!("query::TypeKind::FunctionPointer")
+                                }
+                                query::TypeKind::Tuple(_) => todo!("query::TypeKind::Tuple"),
+                                query::TypeKind::Slice(_) => todo!("query::TypeKind::Slice"),
+                                query::TypeKind::Array(_) => todo!("query::TypeKind::Array"),
+                                query::TypeKind::ImplTrait(_) => {
+                                    todo!("query::TypeKind::ImplTrait")
+                                }
+                                query::TypeKind::Infer => todo!("query::TypeKind::Infer"),
+                                query::TypeKind::RawPointer(_) => {
+                                    todo!("query::TypeKind::RawPointer")
+                                }
+                                // if it contains a borrow, make it a resource
+                                query::TypeKind::BorrowedRef(_) => {
+                                    break 'wit WitType {
+                                        kind: WitTypeKind::Resource(struct_name),
+                                        functions: (),
+                                        source: todo!(),
+                                    };
+                                }
+                                query::TypeKind::QualifiedPath(_) => {
+                                    todo!("query::TypeKind::QualifiedPath")
+                                }
+                            }
+                        } else {
+                            break 'wit WitType {
+                                kind: todo!(),
+                                functions: todo!(),
+                                source: todo!(),
+                            };
+                        }
+                    }
+                    println!(">;");
+
+                    WitType {
+                        kind: WitTypeKind::Variant(Variant {
+                            name: struct_name,
+                            fields,
+                        }),
+                        functions: (),
+                        source: if struct_.data.crate_id == root_crate_id {
+                            Source::Local(struct_.data.id.clone())
+                        } else {
+                            Source::Foreign(Some(struct_.data.id.clone()))
+                        },
+                    }
+                }
             }
-            StructItemKind::StructUnit(unit) => {
-                println!("{indent}record {};", struct_.name().to_case(Case::Kebab));
-            }
-            StructItemKind::StructTuple(tuple) => {
-                print!(
-                    "{indent}type {} = tuple<",
-                    struct_.name().to_case(Case::Kebab)
-                );
-                print!("TODO");
-                println!(">;")
-            }
-        }
-        println!();
+        };
+        let text = wit.kind.print();
+        println!("{text}");
     }
 
     for enum_ in module.enums() {
@@ -153,7 +302,156 @@ fn process_module(module: query::Item<&rustdoc_types::Module>, depth: usize) {
 
     for module in module.modules() {
         println!("{indent}(module) {}", module.name().to_case(Case::Kebab));
-        process_module(module, depth + 1);
+        process_module(root_crate_id, module, depth + 1);
+    }
+}
+
+struct WitFunction {
+    name: String,
+    params: Vec<(String, WitType)>,
+    output: Option<WitType>,
+}
+
+impl WitFunction {
+    fn print(&self) -> impl std::fmt::Display {
+        let mut f = String::new();
+        write!(f, "{name}: func(", name = self.name).unwrap();
+        for (idx, (name, param)) in self.params.iter().enumerate() {
+            if idx > 0 {
+                write!(f, ", ").unwrap();
+            }
+            write!(f, "{name}: {param}", param = param.kind.print()).unwrap();
+        }
+        write!(f, ")").unwrap();
+        match &self.output {
+            Some(output) => write!(f, " -> {output};", output = output.kind.print()).unwrap(),
+            None => write!(f, ";").unwrap(),
+        }
+        f
+    }
+}
+
+struct WitType {
+    kind: WitTypeKind,
+    functions: (),
+    source: Source,
+}
+
+enum Source {
+    Local(Id),
+    Foreign(Option<Id>),
+}
+
+enum WitTypeKind {
+    U8,
+    U16,
+    U32,
+    U64,
+    S8,
+    S16,
+    S32,
+    S64,
+    Float32,
+    Float64,
+    Char,
+    Bool,
+    String,
+    Record(Record),
+    Variant(Variant),
+    Resource(String),
+}
+
+struct Record {
+    name: String,
+    fields: Vec<(String, WitType)>,
+}
+
+struct Variant {
+    name: String,
+    fields: Vec<WitType>,
+}
+
+struct Resource {
+    name: String,
+}
+
+impl WitTypeKind {
+    fn from_rust_type(ty: &str) -> Option<Self> {
+        match ty {
+            "u8" => Some(Self::U8),
+            "u16" => Some(Self::U16),
+            "u32" => Some(Self::U32),
+            "u64" => Some(Self::U64),
+            "i8" => Some(Self::S8),
+            "i16" => Some(Self::S16),
+            "i32" => Some(Self::S32),
+            "i64" => Some(Self::S64),
+            "f32" => Some(Self::Float32),
+            "f64" => Some(Self::Float64),
+            "char" => Some(Self::Char),
+            "bool" => Some(Self::Bool),
+            "String" => Some(Self::String),
+            "str" => Some(Self::String),
+            _ => None,
+        }
+    }
+
+    fn print(&self) -> impl std::fmt::Display {
+        match self {
+            Self::U8 => "u8".to_string(),
+            Self::U16 => "u16".to_string(),
+            Self::U32 => "u32".to_string(),
+            Self::U64 => "u64".to_string(),
+            Self::S8 => "s8".to_string(),
+            Self::S16 => "s16".to_string(),
+            Self::S32 => "s32".to_string(),
+            Self::S64 => "s64".to_string(),
+            Self::Float32 => "float32".to_string(),
+            Self::Float64 => "float64".to_string(),
+            Self::Char => "char".to_string(),
+            Self::Bool => "bool".to_string(),
+            Self::String => "string".to_string(),
+            Self::Record(record) => {
+                let mut f = String::new();
+                write!(f, "record {name}", name = record.name).unwrap();
+                if record.fields.is_empty() {
+                    write!(f, ";").unwrap();
+                } else {
+                    write!(f, " {{").unwrap();
+                    for (idx, (name, ty)) in record.fields.iter().enumerate() {
+                        if idx > 0 {
+                            write!(f, ", ").unwrap();
+                        }
+                        write!(f, "{name}: {ty}", ty = ty.kind.print()).unwrap();
+                    }
+                    write!(f, "}};").unwrap();
+                }
+                f
+            }
+            Self::Variant(variant) => {
+                let mut f = String::new();
+                write!(f, "variant {name}", name = variant.name).unwrap();
+                if variant.fields.is_empty() {
+                    write!(f, ";").unwrap();
+                } else {
+                    write!(f, " {{").unwrap();
+                    for (idx, ty) in variant.fields.iter().enumerate() {
+                        if idx > 0 {
+                            write!(f, ", ").unwrap();
+                        }
+                        write!(f, "{ty}", ty = ty.kind.print()).unwrap();
+                    }
+                    write!(f, "}}").unwrap();
+                }
+                f
+            }
+            Self::Resource(resource) => {
+                let mut f = String::new();
+                write!(f, "resource {name}", name = resource).unwrap();
+                write!(f, ";").unwrap();
+                f
+            }
+        }
     }
 }
 
